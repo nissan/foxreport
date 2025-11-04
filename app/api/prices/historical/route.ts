@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { serverCache, serverCacheKeys } from "@/lib/cache/server-cache";
 import { ChainId } from "@/types/portfolio";
+import { getAlchemyBatchHistoricalPrices } from "@/lib/prices/alchemy-prices";
+import { Address } from "viem";
 
 // Common tokens that should always be cached with longer TTL
 const WELL_KNOWN_TOKENS: Record<string, string> = {
@@ -146,6 +148,45 @@ async function fetchHistoricalCoinGeckoPrice(
   }
 }
 
+/**
+ * Fetch historical prices using Alchemy API (with CoinGecko fallback)
+ */
+async function fetchAlchemyHistoricalPrices(
+  requests: Array<{ address: string; chainId: ChainId; timestamp: number }>
+): Promise<Map<string, number>> {
+  try {
+    console.log(
+      `[Historical API] Attempting Alchemy fetch for ${requests.length} historical prices`
+    );
+
+    const alchemyResults = await getAlchemyBatchHistoricalPrices(
+      requests.map((r) => ({
+        address: r.address as Address,
+        chainId: r.chainId,
+        timestamp: Math.floor(r.timestamp / 1000), // Convert ms to seconds
+      }))
+    );
+
+    if (alchemyResults.size > 0) {
+      console.log(
+        `[Historical API] Alchemy success: ${alchemyResults.size}/${requests.length} historical prices`
+      );
+      return alchemyResults;
+    }
+
+    console.warn(
+      "[Historical API] Alchemy returned no results, falling back to CoinGecko"
+    );
+    return new Map();
+  } catch (error) {
+    console.error(
+      "[Historical API] Alchemy error, falling back to CoinGecko:",
+      error
+    );
+    return new Map();
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -188,43 +229,129 @@ export async function POST(request: NextRequest) {
       `[Historical API] Cache hit: ${requests.length - requestsToFetch.length}/${requests.length} prices`
     );
 
-    // Fetch missing prices in batches to respect rate limits
-    const BATCH_SIZE = 3; // Smaller batch for historical prices (more expensive API calls)
-    const DELAY_MS = 1000; // Longer delay between batches
+    // Feature flag: Use Alchemy or CoinGecko
+    const useAlchemy = process.env.USE_ALCHEMY_PRICES === "true";
+    const priceSource = useAlchemy ? "Alchemy" : "CoinGecko";
 
-    for (let i = 0; i < requestsToFetch.length; i += BATCH_SIZE) {
-      const batch = requestsToFetch.slice(i, i + BATCH_SIZE);
+    console.log(
+      `[Historical API] Using ${priceSource} for ${requestsToFetch.length} historical prices`
+    );
 
-      await Promise.allSettled(
-        batch.map(async ({ address, chainId, timestamp }) => {
-          const price = await fetchHistoricalCoinGeckoPrice(
-            address,
-            chainId,
-            timestamp
+    if (useAlchemy && requestsToFetch.length > 0) {
+      // Try Alchemy first (batch fetch, no delays needed)
+      const alchemyPrices = await fetchAlchemyHistoricalPrices(requestsToFetch);
+
+      // Store Alchemy results in priceMap and cache
+      alchemyPrices.forEach((price, key) => {
+        priceMap[key] = price;
+
+        // Extract address, chainId, and timestamp from key
+        const parts = key.split("_");
+        const address = parts[0];
+        const chainId = parseInt(parts[1]) as ChainId;
+        const timestamp = parseInt(parts[2]);
+
+        // Cache historical prices with very long TTL (7 days)
+        const cacheKey = serverCacheKeys.historicalPrice(
+          address,
+          chainId,
+          timestamp
+        );
+        serverCache.set(cacheKey, price, 10080); // 7 days in minutes
+
+        console.log(
+          `[Historical API] Alchemy: ${address} on chain ${chainId} at ${new Date(timestamp).toISOString()}: $${price}`
+        );
+      });
+
+      // Identify requests that Alchemy didn't return
+      const missingRequests = requestsToFetch.filter((req) => {
+        const key = `${req.address.toLowerCase()}_${req.chainId}_${req.timestamp}`;
+        return !alchemyPrices.has(key);
+      });
+
+      if (missingRequests.length > 0) {
+        console.warn(
+          `[Historical API] ${missingRequests.length} prices missing from Alchemy, falling back to CoinGecko`
+        );
+
+        // Fall back to CoinGecko for missing prices (with batching and delays)
+        const BATCH_SIZE = 3;
+        const DELAY_MS = 1000;
+
+        for (let i = 0; i < missingRequests.length; i += BATCH_SIZE) {
+          const batch = missingRequests.slice(i, i + BATCH_SIZE);
+
+          await Promise.allSettled(
+            batch.map(async ({ address, chainId, timestamp }) => {
+              const price = await fetchHistoricalCoinGeckoPrice(
+                address,
+                chainId,
+                timestamp
+              );
+
+              if (price !== null) {
+                const key = `${address.toLowerCase()}_${chainId}_${timestamp}`;
+                priceMap[key] = price;
+
+                const cacheKey = serverCacheKeys.historicalPrice(
+                  address,
+                  chainId,
+                  timestamp
+                );
+                serverCache.set(cacheKey, price, 10080);
+
+                console.log(
+                  `[Historical API] CoinGecko fallback: ${address} on chain ${chainId} at ${new Date(timestamp).toISOString()}: $${price}`
+                );
+              }
+            })
           );
 
-          if (price !== null) {
-            const key = `${address.toLowerCase()}_${chainId}_${timestamp}`;
-            priceMap[key] = price;
+          if (i + BATCH_SIZE < missingRequests.length) {
+            await sleep(DELAY_MS);
+          }
+        }
+      }
+    } else {
+      // Use CoinGecko only (original logic)
+      const BATCH_SIZE = 3;
+      const DELAY_MS = 1000;
 
-            // Cache historical prices with very long TTL (7 days - effectively permanent)
-            const cacheKey = serverCacheKeys.historicalPrice(
+      for (let i = 0; i < requestsToFetch.length; i += BATCH_SIZE) {
+        const batch = requestsToFetch.slice(i, i + BATCH_SIZE);
+
+        await Promise.allSettled(
+          batch.map(async ({ address, chainId, timestamp }) => {
+            const price = await fetchHistoricalCoinGeckoPrice(
               address,
               chainId,
               timestamp
             );
-            serverCache.set(cacheKey, price, 10080); // 7 days in minutes
 
-            console.log(
-              `[Historical API] Fetched ${address} on chain ${chainId} at ${new Date(timestamp).toISOString()}: $${price}`
-            );
-          }
-        })
-      );
+            if (price !== null) {
+              const key = `${address.toLowerCase()}_${chainId}_${timestamp}`;
+              priceMap[key] = price;
 
-      // Add delay between batches
-      if (i + BATCH_SIZE < requestsToFetch.length) {
-        await sleep(DELAY_MS);
+              // Cache historical prices with very long TTL (7 days - effectively permanent)
+              const cacheKey = serverCacheKeys.historicalPrice(
+                address,
+                chainId,
+                timestamp
+              );
+              serverCache.set(cacheKey, price, 10080); // 7 days in minutes
+
+              console.log(
+                `[Historical API] Fetched ${address} on chain ${chainId} at ${new Date(timestamp).toISOString()}: $${price}`
+              );
+            }
+          })
+        );
+
+        // Add delay between batches
+        if (i + BATCH_SIZE < requestsToFetch.length) {
+          await sleep(DELAY_MS);
+        }
       }
     }
 
@@ -233,6 +360,7 @@ export async function POST(request: NextRequest) {
       cached: requests.length - requestsToFetch.length,
       fetched: requestsToFetch.length,
       total: requests.length,
+      source: priceSource,
     });
   } catch (error) {
     console.error("[Historical API] Error in /api/prices/historical:", error);

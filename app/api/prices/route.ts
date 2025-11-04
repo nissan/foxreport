@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { serverCache, serverCacheKeys } from "@/lib/cache/server-cache";
 import { ChainId } from "@/types/portfolio";
+import { getAlchemyBatchCurrentPrices } from "@/lib/prices/alchemy-prices";
+import { Address } from "viem";
 
 // Common tokens that should always be cached with longer TTL
 const COMMON_TOKENS: Record<string, { coinId: string; chainIds: ChainId[] }> = {
@@ -126,6 +128,36 @@ async function fetchCoinGeckoPrice(
   }
 }
 
+/**
+ * Fetch prices using Alchemy API (with CoinGecko fallback)
+ */
+async function fetchAlchemyPrices(
+  tokens: Array<{ address: string; chainId: ChainId }>
+): Promise<Map<string, number>> {
+  try {
+    console.log(`[API] Attempting Alchemy fetch for ${tokens.length} tokens`);
+
+    const alchemyResults = await getAlchemyBatchCurrentPrices(
+      tokens.map((t) => ({
+        address: t.address as Address,
+        chainId: t.chainId,
+      }))
+    );
+
+    if (alchemyResults.size > 0) {
+      console.log(`[API] Alchemy success: ${alchemyResults.size}/${tokens.length} prices`);
+      return alchemyResults;
+    }
+
+    // If Alchemy returned no results, fall back to CoinGecko
+    console.warn("[API] Alchemy returned no results, falling back to CoinGecko");
+    return new Map();
+  } catch (error) {
+    console.error("[API] Alchemy error, falling back to CoinGecko:", error);
+    return new Map();
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -160,38 +192,114 @@ export async function POST(request: NextRequest) {
       `[API] Cache hit: ${tokens.length - tokensToFetch.length}/${tokens.length} tokens`
     );
 
-    // Fetch missing prices in batches
-    const BATCH_SIZE = 5;
-    const DELAY_MS = 500;
+    // Feature flag: Use Alchemy or CoinGecko
+    const useAlchemy = process.env.USE_ALCHEMY_PRICES === "true";
+    const priceSource = useAlchemy ? "Alchemy" : "CoinGecko";
 
-    for (let i = 0; i < tokensToFetch.length; i += BATCH_SIZE) {
-      const batch = tokensToFetch.slice(i, i + BATCH_SIZE);
+    console.log(`[API] Using ${priceSource} for ${tokensToFetch.length} tokens`);
 
-      await Promise.allSettled(
-        batch.map(async ({ address, chainId }) => {
-          const price = await fetchCoinGeckoPrice(address, chainId);
+    if (useAlchemy && tokensToFetch.length > 0) {
+      // Try Alchemy first (batch fetch, no delays needed)
+      const alchemyPrices = await fetchAlchemyPrices(tokensToFetch);
 
-          if (price !== null) {
-            const key = `${address.toLowerCase()}_${chainId}`;
-            priceMap[key] = price;
+      // Store Alchemy results in priceMap and cache
+      alchemyPrices.forEach((price, key) => {
+        priceMap[key] = price;
 
-            // Cache with longer TTL for common tokens (30 min vs 5 min)
-            const isCommon = COMMON_TOKENS[address.toLowerCase()];
-            const ttl = isCommon ? 30 : 5;
+        // Extract address and chainId from key (format: "address_chainId")
+        const [address, chainIdStr] = key.split("_");
+        const chainId = parseInt(chainIdStr) as ChainId;
 
-            const cacheKey = serverCacheKeys.tokenPrice(address, chainId);
-            serverCache.set(cacheKey, price, ttl);
+        // Cache with longer TTL for common tokens (30 min vs 5 min)
+        const isCommon = COMMON_TOKENS[address.toLowerCase()];
+        const ttl = isCommon ? 30 : 5;
 
-            console.log(
-              `[API] Fetched ${address} on chain ${chainId}: $${price} (TTL: ${ttl}m)`
-            );
+        const cacheKey = serverCacheKeys.tokenPrice(address, chainId);
+        serverCache.set(cacheKey, price, ttl);
+
+        console.log(
+          `[API] Alchemy: ${address} on chain ${chainId}: $${price} (TTL: ${ttl}m)`
+        );
+      });
+
+      // Identify tokens that Alchemy didn't return
+      const missingTokens = tokensToFetch.filter((token) => {
+        const key = `${token.address.toLowerCase()}_${token.chainId}`;
+        return !alchemyPrices.has(key);
+      });
+
+      if (missingTokens.length > 0) {
+        console.warn(
+          `[API] ${missingTokens.length} tokens missing from Alchemy, falling back to CoinGecko`
+        );
+
+        // Fall back to CoinGecko for missing tokens (with batching and delays)
+        const BATCH_SIZE = 5;
+        const DELAY_MS = 500;
+
+        for (let i = 0; i < missingTokens.length; i += BATCH_SIZE) {
+          const batch = missingTokens.slice(i, i + BATCH_SIZE);
+
+          await Promise.allSettled(
+            batch.map(async ({ address, chainId }) => {
+              const price = await fetchCoinGeckoPrice(address, chainId);
+
+              if (price !== null) {
+                const key = `${address.toLowerCase()}_${chainId}`;
+                priceMap[key] = price;
+
+                const isCommon = COMMON_TOKENS[address.toLowerCase()];
+                const ttl = isCommon ? 30 : 5;
+
+                const cacheKey = serverCacheKeys.tokenPrice(address, chainId);
+                serverCache.set(cacheKey, price, ttl);
+
+                console.log(
+                  `[API] CoinGecko fallback: ${address} on chain ${chainId}: $${price} (TTL: ${ttl}m)`
+                );
+              }
+            })
+          );
+
+          if (i + BATCH_SIZE < missingTokens.length) {
+            await sleep(DELAY_MS);
           }
-        })
-      );
+        }
+      }
+    } else {
+      // Use CoinGecko only (original logic)
+      const BATCH_SIZE = 5;
+      const DELAY_MS = 500;
 
-      // Add delay between batches
-      if (i + BATCH_SIZE < tokensToFetch.length) {
-        await sleep(DELAY_MS);
+      for (let i = 0; i < tokensToFetch.length; i += BATCH_SIZE) {
+        const batch = tokensToFetch.slice(i, i + BATCH_SIZE);
+
+        await Promise.allSettled(
+          batch.map(async ({ address, chainId }) => {
+            const price = await fetchCoinGeckoPrice(address, chainId);
+
+            if (price !== null) {
+              const key = `${address.toLowerCase()}_${chainId}`;
+              priceMap[key] = price;
+
+              // Cache with longer TTL for common tokens (30 min vs 5 min)
+              const isCommon = COMMON_TOKENS[address.toLowerCase()];
+              const ttl = isCommon ? 30 : 5;
+
+              const cacheKey = serverCacheKeys.tokenPrice(address, chainId);
+              serverCache.set(cacheKey, price, ttl);
+
+              console.log(
+                `[API] Fetched ${address} on chain ${chainId}: $${price} (TTL: ${ttl}m)`
+              );
+            }
+          })
+        );
+
+        // Add delay between batches
+        if (i + BATCH_SIZE < tokensToFetch.length) {
+          await sleep(DELAY_MS);
+        }
       }
     }
 
@@ -200,6 +308,7 @@ export async function POST(request: NextRequest) {
       cached: tokens.length - tokensToFetch.length,
       fetched: tokensToFetch.length,
       total: tokens.length,
+      source: priceSource,
     });
   } catch (error) {
     console.error("[API] Error in /api/prices:", error);
