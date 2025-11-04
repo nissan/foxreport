@@ -119,7 +119,7 @@ async function fetchExchangeRateAPI(
     }
 
     const data = await response.json();
-    const rates: Record<SupportedCurrency, number> = {};
+    const rates: Partial<Record<SupportedCurrency, number>> = {};
 
     currencies.forEach((currency) => {
       if (data.conversion_rates[currency]) {
@@ -127,7 +127,14 @@ async function fetchExchangeRateAPI(
       }
     });
 
-    return rates;
+    // Verify all required currencies are present
+    const hasAllCurrencies = currencies.every((currency) => rates[currency] !== undefined);
+    if (!hasAllCurrencies) {
+      console.warn("[FX] ExchangeRate-API missing some currency rates");
+      return null;
+    }
+
+    return rates as Record<SupportedCurrency, number>;
   } catch (error) {
     console.error("[FX] Error fetching from ExchangeRate-API:", error);
     return null;

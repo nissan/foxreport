@@ -358,7 +358,7 @@ export async function getBatchTokenPrices(
         chainId,
         priceUsd: price as number,
         timestamp: Date.now(),
-        source: "api",
+        source: "alchemy",
       };
 
       sessionCache.set(cacheKey, priceData, 5);
