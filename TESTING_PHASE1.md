@@ -354,6 +354,36 @@ Use this checklist when manually testing:
 
 ---
 
+## Issues Found During Initial Testing
+
+### Issue #1: Hydration Mismatch on Theme Toggle ✅ FIXED
+
+**Date**: November 4, 2025
+**Symptom**:
+```
+Uncaught Error: Hydration failed because the server rendered HTML didn't match the client
+```
+
+**Root Cause**:
+- Theme toggle button rendered different icons on server vs client
+- Server doesn't know user's theme preference (returns undefined)
+- Client reads theme from localStorage after mounting
+
+**Solution**:
+- Added `mounted` state to track client-side hydration
+- Only render theme toggle after component mounts
+- Prevents SSR/client mismatch
+
+**Files Changed**:
+- `app/page.tsx` - Added useEffect for mounted state
+- Wrapped theme button in `{mounted && ...}` conditional
+
+**Commit**: `6536958 fix: resolve hydration mismatch error on theme toggle button`
+
+**Status**: ✅ FIXED
+
+---
+
 ## Test Results Template
 
 ```markdown
@@ -364,8 +394,8 @@ Use this checklist when manually testing:
 **Browser**: [Chrome/Firefox/Safari + version]
 
 ### Test 2: Code Compilation
-- Status: PASS/FAIL
-- Notes:
+- Status: PASS (after hydration fix)
+- Notes: Hydration error fixed in commit 6536958
 
 ### Test 3: Portfolio Page Load
 - First Load Time: X seconds
