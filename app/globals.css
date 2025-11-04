@@ -1,26 +1,210 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
+@import "tw-animate-css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-cyber: "Orbitron", monospace;
+  --font-tech: "Rajdhani", sans-serif;
+  --color-neon-cyan: var(--neon-cyan);
+  --color-neon-blue: var(--neon-blue);
+  --color-neon-purple: var(--neon-purple);
+  --color-neon-pink: var(--neon-pink);
+  --color-neon-orange: var(--neon-orange);
+  --color-grid: var(--grid);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* TRON Light Mode - Futuristic White/Cyan */
+:root {
+  --radius: 0.5rem;
+  --background: oklch(0.98 0 0);
+  --foreground: oklch(0.15 0.02 240);
+  --card: oklch(1 0 0 / 70%);
+  --card-foreground: oklch(0.15 0.02 240);
+  --popover: oklch(1 0 0 / 90%);
+  --popover-foreground: oklch(0.15 0.02 240);
+  --primary: oklch(0.55 0.25 210);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.85 0.05 280);
+  --secondary-foreground: oklch(0.15 0.02 240);
+  --muted: oklch(0.92 0.01 240);
+  --muted-foreground: oklch(0.45 0.02 240);
+  --accent: oklch(0.5 0.28 190);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.55 0.27 20);
+  --border: oklch(0.55 0.25 210 / 30%);
+  --input: oklch(0.92 0.02 240 / 50%);
+  --ring: oklch(0.5 0.3 190);
+  --chart-1: oklch(0.5 0.28 190);
+  --chart-2: oklch(0.55 0.25 210);
+  --chart-3: oklch(0.45 0.25 280);
+  --chart-4: oklch(0.6 0.25 330);
+  --chart-5: oklch(0.5 0.25 170);
+  --neon-cyan: oklch(0.7 0.3 190);
+  --neon-blue: oklch(0.6 0.3 250);
+  --neon-purple: oklch(0.55 0.3 300);
+  --neon-pink: oklch(0.65 0.3 350);
+  --neon-orange: oklch(0.65 0.25 40);
+  --grid: oklch(0.55 0.25 210 / 20%);
+}
+
+/* TRON Dark Mode - Psychedelic Neon */
+.dark {
+  --background: oklch(0.08 0.02 240);
+  --foreground: oklch(0.95 0.05 190);
+  --card: oklch(0.12 0.03 240 / 80%);
+  --card-foreground: oklch(0.95 0.05 190);
+  --popover: oklch(0.12 0.03 240 / 95%);
+  --popover-foreground: oklch(0.95 0.05 190);
+  --primary: oklch(0.7 0.3 190);
+  --primary-foreground: oklch(0.08 0.02 240);
+  --secondary: oklch(0.18 0.05 250);
+  --secondary-foreground: oklch(0.85 0.1 190);
+  --muted: oklch(0.15 0.03 240);
+  --muted-foreground: oklch(0.6 0.08 200);
+  --accent: oklch(0.6 0.3 280);
+  --accent-foreground: oklch(0.95 0.05 190);
+  --destructive: oklch(0.6 0.3 15);
+  --border: oklch(0.7 0.3 190 / 40%);
+  --input: oklch(0.15 0.05 240 / 70%);
+  --ring: oklch(0.7 0.3 190);
+  --chart-1: oklch(0.7 0.3 190);
+  --chart-2: oklch(0.65 0.3 250);
+  --chart-3: oklch(0.6 0.3 280);
+  --chart-4: oklch(0.65 0.3 330);
+  --chart-5: oklch(0.7 0.28 40);
+  --neon-cyan: oklch(0.8 0.35 190);
+  --neon-blue: oklch(0.7 0.35 250);
+  --neon-purple: oklch(0.65 0.35 280);
+  --neon-pink: oklch(0.75 0.35 330);
+  --neon-orange: oklch(0.75 0.32 40);
+  --grid: oklch(0.7 0.3 190 / 15%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-[family-name:var(--font-tech)] antialiased;
+    font-feature-settings: "kern" 1;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-[family-name:var(--font-cyber)] tracking-wider;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* TRON Grid Background */
+@keyframes gridPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+.tron-grid {
+  background-image:
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 50px 50px;
+  animation: gridPulse 4s ease-in-out infinite;
+}
+
+/* Neon Glow Effects */
+.neon-glow {
+  text-shadow:
+    0 0 10px currentColor,
+    0 0 20px currentColor,
+    0 0 30px currentColor,
+    0 0 40px currentColor;
+}
+
+.neon-border {
+  box-shadow:
+    inset 0 0 20px oklch(0.7 0.3 190 / 30%),
+    0 0 20px oklch(0.7 0.3 190 / 50%),
+    0 0 40px oklch(0.7 0.3 190 / 30%);
+}
+
+.neon-border-blue {
+  box-shadow:
+    inset 0 0 20px oklch(0.65 0.3 250 / 30%),
+    0 0 20px oklch(0.65 0.3 250 / 50%),
+    0 0 40px oklch(0.65 0.3 250 / 30%);
+}
+
+.neon-border-purple {
+  box-shadow:
+    inset 0 0 20px oklch(0.6 0.3 280 / 30%),
+    0 0 20px oklch(0.6 0.3 280 / 50%),
+    0 0 40px oklch(0.6 0.3 280 / 30%);
+}
+
+/* Scan Line Effect */
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.scanline {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(to bottom,
+    transparent,
+    oklch(0.7 0.3 190 / 60%),
+    transparent
+  );
+  animation: scanline 6s linear infinite;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Glitch Effect */
+@keyframes glitch {
+  0%, 100% { transform: translate(0); }
+  33% { transform: translate(-2px, 2px); }
+  66% { transform: translate(2px, -2px); }
+}
+
+.glitch:hover {
+  animation: glitch 0.3s infinite;
 }
