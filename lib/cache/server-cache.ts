@@ -99,4 +99,10 @@ export const serverCacheKeys = {
 
   commonTokens: () =>
     `common:tokens`,
+
+  currentFXRates: () =>
+    `fx:current`,
+
+  historicalFXRates: (date: string) =>
+    `fx:historical:${date}`,
 };
