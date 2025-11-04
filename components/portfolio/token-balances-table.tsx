@@ -59,16 +59,23 @@ export function TokenBalancesTable({ balances }: TokenBalancesTableProps) {
     [balances]
   );
 
-  // Group balances by L1/L2
+  // Group balances by L1/L2 and by individual chains
   const l1Chains = getL1Chains();
   const l2Chains = getL2Chains();
 
   const l1Balances = balancesWithTypes.filter((b) => l1Chains.includes(b.chainId));
-  const l2Balances = balancesWithTypes.filter((b) => l2Chains.includes(b.chainId));
+
+  // Group L2 balances by individual chain
+  const l2BalancesByChain = l2Chains.reduce((acc, chainId) => {
+    const chainBalances = balancesWithTypes.filter((b) => b.chainId === chainId);
+    if (chainBalances.length > 0) {
+      acc[chainId] = chainBalances;
+    }
+    return acc;
+  }, {} as Record<number, typeof balancesWithTypes>);
 
   // Calculate total values
   const l1TotalValue = l1Balances.reduce((sum, b) => sum + (b.valueUsd || 0), 0);
-  const l2TotalValue = l2Balances.reduce((sum, b) => sum + (b.valueUsd || 0), 0);
 
   // Define columns for sortable table
   const columns: ColumnDef<TokenBalance & { tokenType?: string }>[] = [
@@ -231,7 +238,7 @@ export function TokenBalancesTable({ balances }: TokenBalancesTableProps) {
       {/* L1 Tokens Group */}
       {l1Balances.length > 0 && (
         <TokenGroup
-          title="Layer 1 Chains"
+          title="Ethereum"
           layer="L1"
           tokens={l1Balances}
           totalValueUsd={l1TotalValue}
@@ -246,23 +253,30 @@ export function TokenBalancesTable({ balances }: TokenBalancesTableProps) {
         </TokenGroup>
       )}
 
-      {/* L2 Tokens Group */}
-      {l2Balances.length > 0 && (
-        <TokenGroup
-          title="Layer 2 Chains"
-          layer="L2"
-          tokens={l2Balances}
-          totalValueUsd={l2TotalValue}
-          defaultExpanded={true}
-        >
-          <SortableTable
-            data={l2Balances}
-            columns={columns}
-            defaultSort={[{ id: "valueUsd", desc: true }]}
-            emptyMessage="No L2 tokens found"
-          />
-        </TokenGroup>
-      )}
+      {/* L2 Tokens - Separate Group per Chain */}
+      {Object.entries(l2BalancesByChain).map(([chainIdStr, chainBalances]) => {
+        const chainId = parseInt(chainIdStr) as import("@/types/portfolio").ChainId;
+        const chainName = getChainName(chainId);
+        const chainTotalValue = chainBalances.reduce((sum, b) => sum + (b.valueUsd || 0), 0);
+
+        return (
+          <TokenGroup
+            key={chainId}
+            title={chainName}
+            layer="L2"
+            tokens={chainBalances}
+            totalValueUsd={chainTotalValue}
+            defaultExpanded={true}
+          >
+            <SortableTable
+              data={chainBalances}
+              columns={columns}
+              defaultSort={[{ id: "valueUsd", desc: true }]}
+              emptyMessage={`No tokens found on ${chainName}`}
+            />
+          </TokenGroup>
+        );
+      })}
     </div>
   );
 }
