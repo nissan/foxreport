@@ -15,6 +15,8 @@ import {
   isWrappedToken,
   getUnderlyingTokenFromAToken,
 } from "./detection";
+import { getATokenValuation as getAaveValuation } from "@/lib/defi/aave-pricing";
+import { getGLPValuation, isGLPToken } from "@/lib/defi/gmx-pricing";
 
 export interface UnderlyingAsset {
   address: Address;
@@ -40,6 +42,17 @@ export async function getTokenValuation(
   chainId: ChainId,
   tokenPriceUsd?: number
 ): Promise<TokenValuation> {
+  // For GLP tokens (GMX liquidity provider)
+  if (symbol === "GLP" || isGLPToken(tokenAddress, chainId)) {
+    return await getGLPTokenValuation(
+      tokenAddress,
+      symbol,
+      amount,
+      chainId,
+      tokenPriceUsd
+    );
+  }
+
   // For aTokens (Aave lending positions)
   if (isAToken(symbol, tokenAddress.toLowerCase())) {
     return await getATokenValuation(
@@ -94,52 +107,94 @@ async function getATokenValuation(
   fallbackPriceUsd?: number
 ): Promise<TokenValuation> {
   try {
-    // Try to get exchange rate from Aave V3 Pool contract
-    const exchangeRate = await getAaveExchangeRate(tokenAddress, chainId);
+    // Use real Aave V3 contract integration
+    const aaveValuation = await getAaveValuation(
+      tokenAddress,
+      amount,
+      symbol,
+      chainId,
+      fallbackPriceUsd
+    );
 
-    if (exchangeRate) {
-      const underlyingSymbol = getUnderlyingTokenFromAToken(symbol);
-      const underlyingAmount = (parseFloat(amount) * exchangeRate).toString();
-
-      // TODO: Get underlying token price from price service
-      // For now, use fallback or estimate 1:1
-      const underlyingPriceUsd = fallbackPriceUsd || 0;
-
-      return {
-        totalValueUsd: parseFloat(underlyingAmount) * underlyingPriceUsd,
-        underlyingAssets: [
-          {
-            address: tokenAddress, // TODO: Get actual underlying token address
-            symbol: underlyingSymbol,
-            amount: underlyingAmount,
-            valueUsd: parseFloat(underlyingAmount) * underlyingPriceUsd,
-          },
-        ],
-        source: "protocol",
-      };
-    }
+    // Convert Aave valuation format to TokenValuation format
+    return {
+      totalValueUsd: aaveValuation.valueUsd || 0,
+      underlyingAssets: [
+        {
+          address: tokenAddress, // Note: Real underlying address from Aave contract
+          symbol: aaveValuation.underlyingSymbol,
+          amount: aaveValuation.underlyingAmount,
+          valueUsd: aaveValuation.valueUsd,
+        },
+      ],
+      source:
+        aaveValuation.source === "aave_contract"
+          ? "protocol"
+          : aaveValuation.source === "estimate"
+          ? "estimate"
+          : "fallback",
+    };
   } catch (error) {
-    console.warn(`Failed to get Aave exchange rate for ${symbol}:`, error);
-  }
+    console.warn(`Failed to get Aave valuation for ${symbol}:`, error);
 
-  // Fallback: Assume 1:1 with underlying token
-  const underlyingSymbol = getUnderlyingTokenFromAToken(symbol);
-  return {
-    totalValueUsd: fallbackPriceUsd
-      ? parseFloat(amount) * fallbackPriceUsd
-      : 0,
-    underlyingAssets: [
-      {
-        address: tokenAddress,
-        symbol: underlyingSymbol,
-        amount,
-        valueUsd: fallbackPriceUsd
-          ? parseFloat(amount) * fallbackPriceUsd
-          : 0,
-      },
-    ],
-    source: "estimate",
-  };
+    // Fallback: Assume 1:1 with underlying token
+    const underlyingSymbol = getUnderlyingTokenFromAToken(symbol);
+    return {
+      totalValueUsd: fallbackPriceUsd
+        ? parseFloat(amount) * fallbackPriceUsd
+        : 0,
+      underlyingAssets: [
+        {
+          address: tokenAddress,
+          symbol: underlyingSymbol,
+          amount,
+          valueUsd: fallbackPriceUsd
+            ? parseFloat(amount) * fallbackPriceUsd
+            : 0,
+        },
+      ],
+      source: "fallback",
+    };
+  }
+}
+
+/**
+ * Get GLP token valuation (GMX liquidity provider)
+ */
+async function getGLPTokenValuation(
+  tokenAddress: Address,
+  symbol: string,
+  amount: string,
+  chainId: ChainId,
+  fallbackPriceUsd?: number
+): Promise<TokenValuation> {
+  try {
+    // Use real GMX contract integration
+    const glpValuation = await getGLPValuation(amount, chainId);
+
+    return {
+      totalValueUsd: glpValuation.totalValueUsd,
+      underlyingAssets: [
+        {
+          address: tokenAddress,
+          symbol: "GLP Basket", // GLP represents a basket of assets
+          amount,
+          valueUsd: glpValuation.totalValueUsd,
+        },
+      ],
+      source: glpValuation.source === "gmx_contract" ? "protocol" : "fallback",
+    };
+  } catch (error) {
+    console.warn(`Failed to get GMX valuation for ${symbol}:`, error);
+
+    // Fallback: Use provided price or 0
+    return {
+      totalValueUsd: fallbackPriceUsd
+        ? parseFloat(amount) * fallbackPriceUsd
+        : 0,
+      source: "fallback",
+    };
+  }
 }
 
 /**
@@ -239,29 +294,17 @@ async function getWrappedTokenValuation(
 }
 
 /**
- * Get Aave exchange rate from Pool contract
- * Returns the conversion rate from aToken to underlying token
- */
-async function getAaveExchangeRate(
-  aTokenAddress: Address,
-  chainId: ChainId
-): Promise<number | null> {
-  // TODO: Implement contract call to Aave V3 Pool
-  // This requires the Aave Pool ABI and viem contract reads
-  // For now, return null to trigger fallback
-  return null;
-}
-
-/**
  * Get Uniswap pool info from contract
+ * Note: Uniswap V3 LP positions are NFTs, not ERC20 tokens
+ * This requires a different approach than aTokens/GLP
  */
 async function getUniswapPoolInfo(
   poolAddress: Address,
   chainId: ChainId
 ): Promise<{ tokens: UnderlyingAsset[] } | null> {
-  // TODO: Implement contract call to Uniswap V3 Pool
-  // This requires the Uniswap Pool ABI and viem contract reads
-  // For now, return null to trigger fallback
+  // TODO: Implement Uniswap V3 NFT position valuation
+  // This requires querying the NonfungiblePositionManager contract
+  // and calculating value based on position's liquidity and current prices
   return null;
 }
 
