@@ -1,6 +1,19 @@
 import { Address } from "viem";
 
 export type ChainId = 1 | 42161 | 8453; // Ethereum, Arbitrum, Base
+export type ChainLayer = "L1" | "L2";
+
+// Token type classification
+export type TokenType = "native" | "erc20" | "wrapped" | "aToken" | "lpToken";
+
+// Transaction category (enhanced from simple type)
+export type TransactionCategory =
+  | "deposit"          // Incoming transfer
+  | "withdrawal"       // Outgoing transfer
+  | "transfer"         // Internal transfer
+  | "swap"             // Token swap
+  | "defi_interaction" // DeFi protocol interaction (Aave, Uniswap, etc.)
+  | "unknown";
 
 export interface TokenBalance {
   address: Address;
@@ -13,6 +26,15 @@ export interface TokenBalance {
   valueUsd?: number;
   chainId: ChainId;
   logo?: string;
+  // Token type detection
+  tokenType?: TokenType;
+  // Underlying assets for wrapped tokens
+  underlyingAssets?: {
+    address: Address;
+    symbol: string;
+    amount: string;
+    valueUsd?: number;
+  }[];
 }
 
 export interface Transaction {
@@ -24,7 +46,8 @@ export interface Transaction {
   timestamp: number;
   blockNumber: number;
   chainId: ChainId;
-  type: "deposit" | "withdrawal" | "swap" | "unknown";
+  type: "deposit" | "withdrawal" | "swap" | "unknown"; // Legacy field
+  category?: TransactionCategory; // Enhanced categorization
   tokenTransfers?: TokenTransfer[];
   // P&L fields (Phase 5)
   historicalPriceUsd?: number;  // Token price at transaction time
@@ -109,4 +132,30 @@ export interface WalletInfo {
   type: "eoa" | "safe" | "contract";
   ensName?: string;
   chainId?: ChainId;
+}
+
+// Funding Analysis Types
+export interface ChainFundingSummary {
+  chainId: ChainId;
+  chainName: string;
+  layer: ChainLayer;
+  totalDeposits: number;       // USD value of all incoming transfers
+  totalWithdrawals: number;    // USD value of all outgoing transfers
+  netFunding: number;           // deposits - withdrawals
+  depositCount: number;
+  withdrawalCount: number;
+}
+
+export interface FundingSummary {
+  overallTotalDeposits: number;
+  overallTotalWithdrawals: number;
+  overallNetFunding: number;
+  l1TotalDeposits: number;
+  l1TotalWithdrawals: number;
+  l1NetFunding: number;
+  l2TotalDeposits: number;
+  l2TotalWithdrawals: number;
+  l2NetFunding: number;
+  chainBreakdown: ChainFundingSummary[];
+  profitTaken?: number; // If net is negative, this is the profit extracted
 }

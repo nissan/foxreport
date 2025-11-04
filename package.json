@@ -23,6 +23,7 @@
     "@safe-global/safe-core-sdk-types": "^5.1.0",
     "@tabler/icons-react": "^3.35.0",
     "@tanstack/react-query": "^5.90.6",
+    "@tanstack/react-table": "^8.21.3",
     "alchemy-sdk": "^3.6.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
